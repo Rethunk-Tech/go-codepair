@@ -6,6 +6,8 @@ Notable changes to `go-codepair`. The format follows
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-11-08
+
 ### Added
 
 - Code generation from a caller-chosen alphabet, and normalisation of the code a user types.
@@ -13,4 +15,5 @@ Notable changes to `go-codepair`. The format follows
 - A transcript that binds both public keys, ids and display names, and the two role-separated proofs over it.
 - A guess limiter with a per-remote lockout and a global failure count the caller can act on.
 
-[Unreleased]: https://github.com/Rethunk-Tech/go-codepair/commits/main
+[Unreleased]: https://github.com/Rethunk-Tech/go-codepair/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/Rethunk-Tech/go-codepair/releases/tag/v0.1.0
