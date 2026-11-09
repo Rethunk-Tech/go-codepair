@@ -9,7 +9,7 @@
 
 ---
 
-Pair two devices on a LAN with a short human-typed code and an authenticated key exchange. Package `codepair`, module `github.com/Rethunk-Tech/go-codepair`.
+Pair two devices on a LAN with a short human-typed code and an authenticated key exchange. Package `codepair`, module `github.com/Totative/go-codepair`.
 
 Two devices that share a network but no trust can be paired by a person reading a short code from one and typing it
 into the other. This package is the cryptographic core of that exchange: it mints the code, derives the two secrets
@@ -19,7 +19,7 @@ the key being agreed.
 ## Quick start
 
 ```bash
-go get github.com/Rethunk-Tech/go-codepair
+go get github.com/Totative/go-codepair
 ```
 
 A worked example and the contracts: [HUMANS.md](HUMANS.md).

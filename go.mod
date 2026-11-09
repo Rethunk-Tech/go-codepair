@@ -1,4 +1,4 @@
-module github.com/Rethunk-Tech/go-codepair
+module github.com/Totative/go-codepair
 
 go 1.27.3
 

@@ -5,7 +5,7 @@ Run and use `go-codepair`. Internals: [AGENTS.md](AGENTS.md).
 ## Quick start
 
 ```bash
-go get github.com/Rethunk-Tech/go-codepair
+go get github.com/Totative/go-codepair
 ```
 
 The host shows a code, the joiner types it, and both end up holding the same long-term key for the other. The bytes
@@ -20,7 +20,7 @@ import (
  "fmt"
  "strings"
 
- "github.com/Rethunk-Tech/go-codepair"
+ "github.com/Totative/go-codepair"
 )
 
 // config is pinned by the caller; two peers agree on it before they pair.
