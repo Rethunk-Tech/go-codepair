@@ -124,6 +124,29 @@ func TestZeroConfigIsRefused(t *testing.T) {
 	if _, _, err := zero.Keys("code", make([]byte, 32), nil); err == nil {
 		t.Fatal("the zero config derived keys")
 	}
+	ok := Config{Protocol: "p", PeerKeyInfo: "i", Iterations: 1, CodeLength: 1, Alphabet: "ab"}
+	if err := ok.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		name string
+		cfg  Config
+		want string
+	}{
+		{"Protocol", Config{PeerKeyInfo: "i", Iterations: 1, CodeLength: 1, Alphabet: "ab"}, "Protocol"},
+		{"PeerKeyInfo", Config{Protocol: "p", Iterations: 1, CodeLength: 1, Alphabet: "ab"}, "PeerKeyInfo"},
+		{"Iterations", Config{Protocol: "p", PeerKeyInfo: "i", CodeLength: 1, Alphabet: "ab"}, "Iterations"},
+		{"CodeLength", Config{Protocol: "p", PeerKeyInfo: "i", Iterations: 1, Alphabet: "ab"}, "CodeLength"},
+		{"Alphabet", Config{Protocol: "p", PeerKeyInfo: "i", Iterations: 1, CodeLength: 1, Alphabet: "a"}, "Alphabet"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			err := tc.cfg.Validate()
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("Validate() = %v, want %s", err, tc.want)
+			}
+		})
+	}
 }
 
 func FuzzNormalizeIsIdempotent(f *testing.F) {
@@ -142,7 +165,10 @@ func TestLimiterLocksOutOneRemote(t *testing.T) {
 	t.Parallel()
 	now := time.Now()
 	limiter := NewLimiter(3, 10, time.Minute)
-	for range 3 {
+	for i := range 3 {
+		if limiter.Locked("192.0.2.9", now) {
+			t.Fatalf("locked after %d guesses", i)
+		}
 		if limiter.Charge("192.0.2.9", now) {
 			t.Fatal("an unburned limiter reported a burn")
 		}
@@ -165,9 +191,14 @@ func TestLimiterRefundReturnsAGuess(t *testing.T) {
 	limiter := NewLimiter(2, 10, time.Minute)
 	limiter.Charge("192.0.2.9", now)
 	limiter.Refund("192.0.2.9", now)
-	for range 2 {
-		limiter.Charge("192.0.2.9", now)
+	limiter.Refund("192.0.2.9", now)
+	if limiter.Charge("192.0.2.9", now) {
+		t.Fatal("a refunded limiter reported a burn")
 	}
+	if limiter.Locked("192.0.2.9", now) {
+		t.Fatal("the refund did not give the guess back")
+	}
+	limiter.Charge("192.0.2.9", now)
 	if !limiter.Locked("192.0.2.9", now) {
 		t.Fatal("the refunded guess still counted")
 	}
@@ -181,6 +212,13 @@ func TestLimiterBurnReportsTheGlobalCount(t *testing.T) {
 		if burned := limiter.Charge("192.0.2."+string(rune('1'+i)), now); burned != (i == 2) {
 			t.Fatalf("charge %d burned = %t", i+1, burned)
 		}
+	}
+	limiter = NewLimiter(50, 3, time.Minute)
+	limiter.Charge("192.0.2.1", now)
+	limiter.Charge("192.0.2.2", now)
+	limiter.Refund("192.0.2.1", now)
+	if limiter.Charge("192.0.2.3", now) {
+		t.Fatal("refund did not give the global guess back")
 	}
 }
 
@@ -198,5 +236,11 @@ func TestLimiterForgetsRemotesLongQuiet(t *testing.T) {
 	limiter.mu.Unlock()
 	if kept || size != 1 {
 		t.Errorf("locks = %d entries, old kept = %t", size, kept)
+	}
+	exact := NewLimiter(2, 10, time.Minute)
+	exact.Charge("peer", now)
+	exact.Charge("peer", now.Add(time.Minute))
+	if !exact.Locked("peer", now.Add(time.Minute)) {
+		t.Fatal("a quiet period of exactly the lockout reset the count")
 	}
 }
