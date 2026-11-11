@@ -12,9 +12,9 @@
 Pair two devices on a LAN with a short human-typed code and an authenticated key exchange. Package `codepair`, module `github.com/Totative/go-codepair`.
 
 Two devices that share a network but no trust can be paired by a person reading a short code from one and typing it
-into the other. This package is the cryptographic core of that exchange: it mints the code, derives the two secrets
-from it, and proves to each side that the other knows the code, so a device that guesses wrong learns nothing about
-the key being agreed.
+into the other. This package is the cryptographic core of that exchange: it mints the code and runs
+[CPace](https://datatracker.ietf.org/doc/draft-irtf-cfrg-cpace/), a password-authenticated key exchange, so the two
+devices agree on a key only if they hold the same code, and an attacker on the wire gets one guess per run.
 
 ## Quick start
 
@@ -27,15 +27,12 @@ A worked example and the contracts: [HUMANS.md](HUMANS.md).
 ## Features
 
 - Codes: `NewCode` draws each character uniformly from a caller-chosen alphabet, and `Normalize` folds a typed code
-  into the form both sides hash, so case and separators never matter.
-- Key derivation: `Keys` stretches the low-entropy code into a proof key with PBKDF2-SHA256 and derives the
-  long-term peer key with HKDF-SHA256 from the shared secret alone, so the stored key cannot be guessed offline.
-- Transcript: `Transcript` binds the protocol, both public keys, and both ids and display names, so a relay in the
-  middle cannot rename a device and still pass.
-- Proofs: `Proof` signs the transcript and the shared secret under the peer's role, and `Verify` compares in
-  constant time.
-- Rate limiting: `Limiter` counts guesses before they are checked, locks a remote out after a set number of
-  failures, and reports when failures in all have reached the point where the caller should drop the code.
+  into the form both sides use, so case and separators never matter. `Validate` enforces a 32-bit entropy floor.
+- Key exchange: `Joiner` and `Host` run CPace (draft-irtf-cfrg-cpace-21, ristretto255, SHA-512), bind the protocol
+  label and both ids and display names, and confirm the key in both directions before they return a `Pairing`.
+- Peer key: the long-term key is HKDF-SHA-512 of the exchange's session key, so it never depends on a guessable value.
+- Rate limiting: `Limiter` is charged once per run, locks a remote out after a set number of failures, and reports
+  when failures in all have reached the point where the caller should drop the code.
 
 ## Documentation
 

@@ -1,20 +1,24 @@
 # Security
 
-## The code is low entropy, on purpose
+## What an attacker can do
 
-An eight-character code from a 31-character alphabet is about 2^39.6 possibilities: few enough to read aloud, so the
-package assumes an attacker can guess. Two things bound that. Offline, after recording a handshake, each guess costs
-`Config.Iterations` of PBKDF2-SHA256, and the code is only useful for as long as the caller honours it, so the
-attacker's rate is set by that cost times the code's lifetime, not by a network round trip. Online, `Limiter` is the
-bound: it counts a guess before it is checked, locks a remote out after its failures, and reports `burned` once
-failures in all reach the caller's limit, at which point the caller should drop the code.
+The code is low entropy on purpose: eight characters from a 31-character alphabet is about 2^39.6 possibilities,
+and `Config.Validate` refuses anything under 32 bits. The handshake is CPace, a balanced password-authenticated key
+exchange, so the code is never testable against recorded or computed data.
 
-Offline guessing is why a caller should not keep a code open longer than a person needs to type it, and why
-`Iterations` is the caller's decision rather than a library default.
-
-The transcript binds both public keys, both device ids, and both display names. A relay between the two devices
-therefore cannot rename a device, swap one device's key for its own, or replay half of another pairing's exchange
-without one of the proofs failing.
+- A passive attacker, one who records the whole exchange, learns nothing it can test a code guess against: the
+  messages are group elements masked by secret scalars, and testing a guess needs one of those scalars.
+- An active attacker gets exactly one guess per protocol run. Pretending to be the host, it can test one code per
+  joiner run, because the joiner answers only after the host's confirmation verifies. Pretending to be the joiner,
+  it can test one code per run, because the host's reply is the only thing it receives. A wrong guess yields no
+  data that rules out any other code, and no key.
+- Every guess therefore costs a run the host has seen. The caller must call `Limiter.Charge` before `Host.Accept`
+  and refuse when it reports locked or burned; `Limiter` then bounds all guessing. Guesses against the joiner cannot
+  be limited by the library, since the attacker is the host: the person typing sees a failed pairing and should
+  re-enter the code on a different run rather than keep it.
+- A relay between the devices cannot rename a device or swap a key: both ids and display names are in the
+  transcript, so altering one makes the confirmations fail.
+- Anyone who learns the code before the run can pair. The code should live no longer than a person needs to type it.
 
 ## Supported versions
 
@@ -32,29 +36,28 @@ Please do not open a public issue for a suspected vulnerability first.
 
 ## What is in scope
 
-- The code a user types, through `Normalize` and `Keys`: any bytes, any length, any encoding. `Normalize` must not
-  panic or allocate without bound, and `Keys` must produce the same key for a code however it was separated or
-  capitalised, never a different one.
-- A peer's public key and the two devices' ids and names, through `Transcript` and `Proof`: any bytes, and strings
-  long enough to matter. `Transcript` must stay total and length-unambiguous, so that no two distinct field tuples
-  produce the same bytes and a relay cannot shift a name into an id.
-- A proof from the other side, through `Verify`: any bytes, empty included. It must report unequal without panicking
-  and without taking time that depends on where the two differ.
-- The remote identifier and clock a caller passes to `Limiter.Locked`, `Charge` and `Refund`: any string, and a clock
-  that moves backwards. None may panic or leave the counts negative.
-- The `Config` a caller builds, through `Validate`: a zero or negative field is refused rather than defaulted, so no
-  code is minted and no key is derived under a label nobody agreed on.
+- The code a user types, through `Normalize`, `NewJoiner` and `NewHost`: any bytes, any length, any encoding.
+  `Normalize` must not panic or allocate without bound, and the same code however separated or capitalised must
+  derive the same key.
+- A peer's message, through `Host.Accept`, `Joiner.Finish` and `Host.Finish`: any bytes, empty included. Invalid
+  encodings, the identity element and non-canonical identity encoding must be rejected without panicking, and no
+  error path may return a key.
+- The remote identifier and clock a caller passes to `Limiter.Charge` and `Refund`: any string, and a clock that
+  moves backwards. None may panic or leave the counts negative.
+- The `Config` a caller builds, through `Validate`: a zero or negative field, a weak or ambiguous alphabet, or a
+  code under 32 bits is refused rather than defaulted.
 
 ## What is out of scope
 
-- The transport, the X25519 key exchange that produces the shared secret, and the lifetime of an open code are the
-  caller's. This package never sees a wire, a clock, or a session, so a caller that ignores `Config.Iterations` or
-  honours a code forever has weakened its own pairing.
-- A short code is low entropy by design. An attacker who records a handshake can guess offline, one `Iterations` of
-  PBKDF2 per guess, so a code's exposure is bounded by that cost times how long it is honoured; an attacker who
-  guesses online is bounded by whatever `Limiter` bounds are passed, and by the caller acting on `Charge`'s `burned`.
-- A caller may show the code grouped, in lower case, or read it aloud; `Normalize` accepts that. It is intended that
-  `Normalize` leaves every other character alone, including characters outside the alphabet, which then fail.
+- The transport and the lifetime of an open code are the caller's. This package never sees a wire, a clock, or a
+  session, so a caller that does not charge the `Limiter` before each run, or honours a code forever, has weakened
+  its own pairing.
+- A caller must check `Pairing.PeerID` and `PeerName` against the device it meant to pair with before storing the
+  key. The confirmation proves the peer sent those values, not that they are the right ones.
+- The cipher suite is ristretto255 with SHA-512 in the initiator-responder setting, per draft-irtf-cfrg-cpace-21,
+  which is an Internet-Draft and not yet an RFC.
+- A caller may show the code grouped, in lower case, or read it aloud; `Normalize` accepts that. It leaves every
+  other character alone, including characters outside the alphabet, which then fail.
 - A device that completes pairing is trusted by whoever stored the key. This package proves knowledge of the code
   and binds the transcript; it does not decide which devices should pair, what a paired device may do, or when a
   stored key expires.

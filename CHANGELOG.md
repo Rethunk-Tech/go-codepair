@@ -6,6 +6,25 @@ Notable changes to `go-codepair`. The format follows
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-11-11
+
+### Added
+
+- A password-authenticated key exchange: `Config.NewJoiner` and `Config.NewHost` run CPace
+  (draft-irtf-cfrg-cpace-21, ristretto255 with SHA-512), bind the protocol label and both devices' ids and display
+  names, confirm the key in both directions, and return a `Pairing` holding the peer key and the peer's identity only
+  after both confirmations verify. An attacker who does not hold the code gets one guess per run.
+- `ErrMessage` and `ErrConfirmation` to tell a malformed message from a wrong code.
+- `MinCodeBits`: `Validate` now refuses codes under 32 bits, alphabets with repeated, non-ASCII or non-printable
+  characters, and characters `Normalize` rewrites.
+
+### Changed
+
+- `Limiter.Charge` returns `(locked, burned)` and counts only a guess it serves, so checking and charging are one
+  call. `Limiter.Locked` is gone. A caller charges once per run, before `Host.Accept`.
+- `Config.Iterations` is gone; the code is no longer stretched, because CPace does not expose it to offline guessing.
+- `Config.Keys`, `Transcript`, `Proof` and `Verify` are replaced by the types above.
+
 ## [0.2.0] - 2026-11-10
 
 ### Changed
@@ -26,6 +45,7 @@ Notable changes to `go-codepair`. The format follows
 - A transcript that binds both public keys, ids and display names, and the two role-separated proofs over it.
 - A guess limiter with a per-remote lockout and a global failure count the caller can act on.
 
-[Unreleased]: https://github.com/Totative/go-codepair/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/Totative/go-codepair/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/Totative/go-codepair/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/Totative/go-codepair/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/Totative/go-codepair/releases/tag/v0.1.0
