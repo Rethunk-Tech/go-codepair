@@ -13,6 +13,10 @@ import (
 // gets one guess per run, so the floor keeps a run's success chance, and the Limiter budget times it, small.
 const MinCodeBits = 32
 
+// ErrCode reports a pairing code that is not exactly Config.CodeLength characters from Config.Alphabet after
+// Normalize. Running the handshake on a weaker secret would give an attacker a better guess than Validate allowed.
+var ErrCode = errors.New("codepair: invalid pairing code")
+
 // Config names the pairing protocol this caller runs. The zero value is not usable: Validate refuses a config that
 // leaves any field out, because an empty Protocol or PeerKeyInfo would derive keys under a shared, guessable label.
 type Config struct {

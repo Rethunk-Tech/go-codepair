@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strings"
 
 	"github.com/gtank/ristretto255"
 )
@@ -22,6 +23,18 @@ type Pairing struct {
 
 var errUsed = errors.New("codepair: this handshake has already been used")
 
+const (
+	maxADField        = 256
+	maxPairingMessage = 1024
+)
+
+func checkPeerAD(id, name []byte) error {
+	if len(id) == 0 || len(id) > maxADField || len(name) > maxADField {
+		return ErrMessage
+	}
+	return nil
+}
+
 // session holds what both roles start from. The channel identifier is the protocol label, so a peer running another
 // protocol derives another generator and fails confirmation.
 type session struct {
@@ -36,7 +49,24 @@ func (c Config) newSession(code, id, name string) (*session, error) {
 	if err := c.Validate(); err != nil {
 		return nil, err
 	}
-	g, err := calculateGenerator([]byte(Normalize(code)), []byte(c.Protocol), nil)
+	code = Normalize(code)
+	if len(code) != c.CodeLength {
+		return nil, fmt.Errorf("codepair: code is %d characters, want %d: %w", len(code), c.CodeLength, ErrCode)
+	}
+	for i := 0; i < len(code); i++ {
+		if !strings.ContainsRune(c.Alphabet, rune(code[i])) {
+			return nil, fmt.Errorf("codepair: code character %q is outside the alphabet: %w", code[i], ErrCode)
+		}
+	}
+	switch {
+	case id == "":
+		return nil, errors.New("codepair: id is empty")
+	case len(id) > maxADField:
+		return nil, fmt.Errorf("codepair: id is %d bytes, want at most %d", len(id), maxADField)
+	case len(name) > maxADField:
+		return nil, fmt.Errorf("codepair: name is %d bytes, want at most %d", len(name), maxADField)
+	}
+	g, err := calculateGenerator([]byte(code), []byte(c.Protocol), nil)
 	if err != nil {
 		return nil, err
 	}
@@ -59,6 +89,9 @@ func (s *session) pairing(isk, peerAD []byte) (Pairing, error) {
 	if err != nil {
 		return Pairing{}, err
 	}
+	if err := checkPeerAD(id, name); err != nil {
+		return Pairing{}, err
+	}
 	key, err := hkdf.Key(sha512.New, isk, nil, s.cfg.PeerKeyInfo, 32)
 	if err != nil {
 		return Pairing{}, fmt.Errorf("codepair: derive the peer key: %w", err)
@@ -66,8 +99,8 @@ func (s *session) pairing(isk, peerAD []byte) (Pairing, error) {
 	return Pairing{PeerKey: key, PeerID: string(id), PeerName: string(name)}, nil
 }
 
-// Joiner is the side that types the code. It speaks first, and each Joiner runs once: a failed run needs a new one
-// with a fresh secret.
+// Joiner is the side that types the code. It speaks first. A Joiner is not safe for concurrent use and serves one
+// pairing attempt: a failed run needs a new one with a fresh secret.
 type Joiner struct{ s *session }
 
 // NewJoiner starts a run with the code the user typed and this device's id and display name. The returned message
@@ -89,10 +122,13 @@ func (j *Joiner) Finish(hostMsg []byte) (confirm []byte, p Pairing, err error) {
 		return nil, Pairing{}, errUsed
 	}
 	j.s = nil
-	if len(hostMsg) < elemSize+tagSize {
+	if len(hostMsg) > maxPairingMessage || len(hostMsg) < elemSize+tagSize {
 		return nil, Pairing{}, ErrMessage
 	}
 	yb, tb, adB := hostMsg[:elemSize], hostMsg[elemSize:elemSize+tagSize], hostMsg[elemSize+tagSize:]
+	if hmac.Equal(yb, s.ya) {
+		return nil, Pairing{}, ErrMessage
+	}
 	k, err := scalarMultVfy(s.y, yb)
 	if err != nil {
 		return nil, Pairing{}, err
@@ -108,8 +144,9 @@ func (j *Joiner) Finish(hostMsg []byte) (confirm []byte, p Pairing, err error) {
 	return confirmationTag(macKey, s.ya, s.ad), p, nil
 }
 
-// Host is the side that shows the code. A caller charges its Limiter before Accept, because the reply lets whoever
-// sent the joiner message test one guess; each Host serves one run.
+// Host is the side that shows the code. A Host is not safe for concurrent use and serves one pairing attempt. A
+// caller charges its Limiter for the remote before Accept, because the reply lets whoever sent the joiner message
+// test one guess.
 type Host struct {
 	s        *session
 	macKey   []byte
@@ -128,24 +165,32 @@ func (c Config) NewHost(code, id, name string) (*Host, error) {
 	return &Host{s: s}, nil
 }
 
-// Accept takes the joiner's message and returns the reply, which carries the host's confirmation. The run is
+// Accept takes the joiner's message and returns the reply, which carries the host's confirmation. The caller must
+// charge the Limiter for the remote before calling Accept, because the reply is one guess at the code. The run is
 // unconfirmed until Finish verifies the joiner's answer.
 func (h *Host) Accept(joinerMsg []byte) ([]byte, error) {
-	if h.accepted {
+	if h.s == nil || h.accepted {
 		return nil, errUsed
 	}
 	h.accepted = true
-	if len(joinerMsg) < elemSize {
+	if len(joinerMsg) > maxPairingMessage || len(joinerMsg) < elemSize {
 		return nil, ErrMessage
 	}
 	s := h.s
 	ya, adA := slices.Clone(joinerMsg[:elemSize]), slices.Clone(joinerMsg[elemSize:])
+	if hmac.Equal(ya, s.ya) {
+		return nil, ErrMessage
+	}
 	k, err := scalarMultVfy(s.y, ya)
 	if err != nil {
 		return nil, err
 	}
 	// Splitting here rejects a malformed identity before the host spends a confirmation on it.
-	if _, _, err := splitPair(adA); err != nil {
+	id, name, err := splitPair(adA)
+	if err != nil {
+		return nil, err
+	}
+	if err := checkPeerAD(id, name); err != nil {
 		return nil, err
 	}
 	h.isk, h.macKey = keyConfirmation(k, nil, ya, adA, s.ya, s.ad)
