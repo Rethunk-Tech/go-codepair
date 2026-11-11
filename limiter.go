@@ -1,6 +1,7 @@
 package codepair
 
 import (
+	"errors"
 	"sync"
 	"time"
 )
@@ -22,17 +23,22 @@ type peerLock struct {
 	failures int
 	until    time.Time
 	last     time.Time
+	charged  int
 }
 
 // NewLimiter returns a limiter that locks one remote out for lockout once it has failed maxFailures guesses, and
-// reports burned once burnFailures guesses have failed in all.
-func NewLimiter(maxFailures, burnFailures int, lockout time.Duration) *Limiter {
+// reports burned once burnFailures guesses have failed in all. All three bounds must be positive: a zero lockout
+// would never expire, and a zero failure cap would refuse or burn on the first charge without a usable budget.
+func NewLimiter(maxFailures, burnFailures int, lockout time.Duration) (*Limiter, error) {
+	if maxFailures < 1 || burnFailures < 1 || lockout < 1 {
+		return nil, errors.New("codepair: maxFailures, burnFailures and lockout must be positive")
+	}
 	return &Limiter{
 		maxFailures:  maxFailures,
 		burnFailures: burnFailures,
 		lockout:      lockout,
 		locks:        map[string]peerLock{},
-	}
+	}, nil
 }
 
 // Charge records one guess from remote and reports whether the guess may be served. locked means remote is inside a
@@ -57,9 +63,10 @@ func (l *Limiter) Charge(remote string, now time.Time) (locked, burned bool) {
 		return false, true
 	}
 	lock.failures++
+	lock.charged++
 	lock.last = now
 	if lock.failures >= l.maxFailures {
-		lock = peerLock{failures: l.maxFailures, until: now.Add(l.lockout), last: now}
+		lock = peerLock{failures: l.maxFailures, until: now.Add(l.lockout), last: now, charged: lock.charged}
 	}
 	l.locks[remote] = lock
 	l.failures++
@@ -68,13 +75,19 @@ func (l *Limiter) Charge(remote string, now time.Time) (locked, burned bool) {
 
 // Refund gives back the guess a correct code spent, so a user who mistypes once and then succeeds still has the
 // whole budget. It leaves a lockout in place, since a computer that just exhausted its guesses has not earned them
-// back.
+// back. A remote with no outstanding charge is left unchanged, so a refund cannot un-burn a budget another guess
+// spent.
 func (l *Limiter) Refund(remote string, now time.Time) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	if lock, ok := l.locks[remote]; ok && lock.failures > 0 && !now.Before(lock.until) {
-		lock.failures--
-		l.locks[remote] = lock
+	lock, ok := l.locks[remote]
+	if !ok || lock.charged < 1 {
+		return
 	}
+	lock.charged--
+	if lock.failures > 0 && !now.Before(lock.until) {
+		lock.failures--
+	}
+	l.locks[remote] = lock
 	l.failures = max(0, l.failures-1)
 }

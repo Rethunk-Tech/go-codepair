@@ -112,7 +112,10 @@ func FuzzNormalizeIsIdempotent(f *testing.F) {
 func TestLimiterLocksOutOneRemote(t *testing.T) {
 	t.Parallel()
 	now := time.Now()
-	limiter := NewLimiter(3, 10, time.Minute)
+	limiter, err := NewLimiter(3, 10, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
 	for range 3 {
 		if locked, burned := limiter.Charge("192.0.2.9", now); locked || burned {
 			t.Fatal("a guess within the limit was refused")
@@ -133,7 +136,10 @@ func TestLimiterLocksOutOneRemote(t *testing.T) {
 func TestLimiterRefundReturnsAGuess(t *testing.T) {
 	t.Parallel()
 	now := time.Now()
-	limiter := NewLimiter(2, 10, time.Minute)
+	limiter, err := NewLimiter(2, 10, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
 	limiter.Charge("192.0.2.9", now)
 	limiter.Refund("192.0.2.9", now)
 	limiter.Charge("192.0.2.9", now)
@@ -148,7 +154,10 @@ func TestLimiterRefundReturnsAGuess(t *testing.T) {
 func TestLimiterBurnReportsTheGlobalCount(t *testing.T) {
 	t.Parallel()
 	now := time.Now()
-	limiter := NewLimiter(50, 3, time.Minute)
+	limiter, err := NewLimiter(50, 3, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
 	for i := range 4 {
 		if _, burned := limiter.Charge("192.0.2."+string(rune('1'+i)), now); burned != (i == 3) {
 			t.Fatalf("charge %d burned = %t", i+1, burned)
@@ -168,7 +177,10 @@ func TestLimiterBurnReportsTheGlobalCount(t *testing.T) {
 func TestLimiterForgetsRemotesLongQuiet(t *testing.T) {
 	t.Parallel()
 	now := time.Now()
-	limiter := NewLimiter(5, 15, time.Minute)
+	limiter, err := NewLimiter(5, 15, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
 	limiter.Charge("old", now.Add(-2*time.Minute))
 	limiter.Charge("new", now)
 	limiter.mu.Lock()
@@ -183,5 +195,37 @@ func TestLimiterForgetsRemotesLongQuiet(t *testing.T) {
 	exact.Charge("peer", now.Add(time.Minute))
 	if locked, _ := exact.Charge("peer", now.Add(time.Minute)); !locked {
 		t.Fatal("a quiet period of exactly the lockout reset the count")
+	}
+}
+
+// A refund belongs to a charge that remote already spent. Giving one back to a name that never guessed must not
+// un-burn the global budget another attacker already exhausted.
+func TestRevLimiterStrayRefund(t *testing.T) {
+	t.Parallel()
+	now := time.Now()
+	limiter, err := NewLimiter(100, 2, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	limiter.Charge("a", now)
+	limiter.Charge("b", now)
+	_, burned := limiter.Charge("c", now)
+	limiter.Refund("never-charged", now)
+	_, still := limiter.Charge("c", now)
+	if !burned || !still {
+		t.Fatalf("burned before stray refund = %v, after = %v", burned, still)
+	}
+}
+
+func TestRevLimiterRejectsNonPositive(t *testing.T) {
+	t.Parallel()
+	if _, err := NewLimiter(0, 5, time.Minute); err == nil {
+		t.Fatal("NewLimiter(0, 5, time.Minute) succeeded")
+	}
+	if _, err := NewLimiter(3, 0, time.Minute); err == nil {
+		t.Fatal("NewLimiter(3, 0, time.Minute) succeeded")
+	}
+	if _, err := NewLimiter(3, 5, 0); err == nil {
+		t.Fatal("NewLimiter(3, 5, 0) succeeded")
 	}
 }
