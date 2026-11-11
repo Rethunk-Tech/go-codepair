@@ -163,7 +163,10 @@ func TestLimiterBurnReportsTheGlobalCount(t *testing.T) {
 			t.Fatalf("charge %d burned = %t", i+1, burned)
 		}
 	}
-	limiter = NewLimiter(50, 3, time.Minute)
+	limiter, err = NewLimiter(50, 3, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
 	limiter.Charge("192.0.2.1", now)
 	limiter.Charge("192.0.2.2", now)
 	limiter.Refund("192.0.2.1", now)
@@ -190,7 +193,10 @@ func TestLimiterForgetsRemotesLongQuiet(t *testing.T) {
 	if kept || size != 1 {
 		t.Errorf("locks = %d entries, old kept = %t", size, kept)
 	}
-	exact := NewLimiter(2, 10, time.Minute)
+	exact, err := NewLimiter(2, 10, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
 	exact.Charge("peer", now)
 	exact.Charge("peer", now.Add(time.Minute))
 	if locked, _ := exact.Charge("peer", now.Add(time.Minute)); !locked {
