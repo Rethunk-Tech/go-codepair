@@ -5,9 +5,10 @@ import (
 	"time"
 )
 
-// Limiter bounds online guessing at the code. A caller charges it once per guess, before checking the guess, so
-// guesses made side by side cannot outnumber the limit. Two counts are kept: a per-remote one that locks one computer
-// out after maxFailures, and a global one that reports burnFailures, at which the caller should drop the code.
+// Limiter bounds online guessing at the code. A caller charges it once per handshake run, before replying to the
+// joiner's message, because each run lets an active attacker test exactly one guess. Two counts are kept: a
+// per-remote one that locks one computer out after maxFailures, and a global one that reports burnFailures, at which
+// the caller should drop the code.
 type Limiter struct {
 	mu           sync.Mutex
 	maxFailures  int
@@ -34,17 +35,12 @@ func NewLimiter(maxFailures, burnFailures int, lockout time.Duration) *Limiter {
 	}
 }
 
-// Locked reports whether remote is inside a lockout at now.
-func (l *Limiter) Locked(remote string, now time.Time) bool {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	return now.Before(l.locks[remote].until)
-}
-
-// Charge records one guess from remote. It returns burned once the guesses failed in all have reached burnFailures,
-// which is the caller's signal to stop honouring the code; further charges keep returning burned until Refund gives
-// a guess back.
-func (l *Limiter) Charge(remote string, now time.Time) bool {
+// Charge records one guess from remote and reports whether the guess may be served. locked means remote is inside a
+// lockout; burned means the guesses failed in all have spent burnFailures, and the caller should drop the code.
+// Either way nothing is counted and the guess must be refused. Checking and counting happen under one lock, so
+// concurrent runs cannot jointly pass the limit; the remote is whatever the caller keys on, so a limit per remote
+// holds only as far as an attacker cannot choose it, and the global count is the bound that does not depend on that.
+func (l *Limiter) Charge(remote string, now time.Time) (locked, burned bool) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	// A lock that has been quiet for a whole lockout says nothing about a computer that comes back tomorrow.
@@ -54,6 +50,12 @@ func (l *Limiter) Charge(remote string, now time.Time) bool {
 		}
 	}
 	lock := l.locks[remote]
+	if now.Before(lock.until) {
+		return true, false
+	}
+	if l.failures >= l.burnFailures {
+		return false, true
+	}
 	lock.failures++
 	lock.last = now
 	if lock.failures >= l.maxFailures {
@@ -61,7 +63,7 @@ func (l *Limiter) Charge(remote string, now time.Time) bool {
 	}
 	l.locks[remote] = lock
 	l.failures++
-	return l.failures >= l.burnFailures
+	return false, false
 }
 
 // Refund gives back the guess a correct code spent, so a user who mistypes once and then succeeds still has the
