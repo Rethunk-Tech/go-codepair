@@ -1,43 +1,61 @@
 package codepair
 
 import (
-	"crypto/hkdf"
-	"crypto/hmac"
-	"crypto/pbkdf2"
 	"crypto/rand"
-	"crypto/sha256"
 	"errors"
 	"fmt"
+	"math"
 	"math/big"
-	"slices"
 	"strings"
 )
 
+// MinCodeBits is the least entropy Validate accepts for a code. The code is the only secret and an active attacker
+// gets one guess per run, so the floor keeps a run's success chance, and the Limiter budget times it, small.
+const MinCodeBits = 32
+
+// ErrCode reports a pairing code that is not exactly Config.CodeLength characters from Config.Alphabet after
+// Normalize. Running the handshake on a weaker secret would give an attacker a better guess than Validate allowed.
+var ErrCode = errors.New("codepair: invalid pairing code")
+
 // Config names the pairing protocol this caller runs. The zero value is not usable: Validate refuses a config that
-// leaves any field out, because an empty Protocol or PeerKeyInfo would derive keys under a shared, guessable label
-// and a zero Iterations would make the code's stretch free.
+// leaves any field out, because an empty Protocol or PeerKeyInfo would derive keys under a shared, guessable label.
 type Config struct {
 	Protocol    string
 	PeerKeyInfo string
-	Iterations  int
 	CodeLength  int
 	Alphabet    string
 }
 
-// Validate reports whether c can mint codes and derive keys. It refuses a zero field rather than defaulting one,
-// since a default would name a product's protocol inside a library that has none.
+// Validate reports whether c can mint codes and run a pairing. It refuses a zero field rather than defaulting one,
+// since a default would name a product's protocol inside a library that has none. The alphabet must be distinct
+// printable ASCII that Normalize leaves alone, so a typed code maps to exactly one string, and the code must carry
+// at least MinCodeBits of entropy.
 func (c Config) Validate() error {
 	switch {
 	case c.Protocol == "":
 		return errors.New("codepair: Protocol is empty")
 	case c.PeerKeyInfo == "":
 		return errors.New("codepair: PeerKeyInfo is empty")
-	case c.Iterations < 1:
-		return errors.New("codepair: Iterations must be at least 1")
 	case c.CodeLength < 1:
 		return errors.New("codepair: CodeLength must be at least 1")
-	case len(c.Alphabet) < 2:
+	}
+	seen := map[rune]bool{}
+	for _, r := range c.Alphabet {
+		switch {
+		case r <= ' ' || r > '~':
+			return fmt.Errorf("codepair: Alphabet character %q is not printable ASCII", r)
+		case r == '-' || (r >= 'a' && r <= 'z'):
+			return fmt.Errorf("codepair: Alphabet character %q is altered by Normalize", r)
+		case seen[r]:
+			return fmt.Errorf("codepair: Alphabet repeats %q", r)
+		}
+		seen[r] = true
+	}
+	if len(seen) < 2 {
 		return errors.New("codepair: Alphabet needs at least two characters")
+	}
+	if bits := float64(c.CodeLength) * math.Log2(float64(len(seen))); bits < MinCodeBits {
+		return fmt.Errorf("codepair: a code carries %.1f bits, want at least %d", bits, MinCodeBits)
 	}
 	return nil
 }
@@ -60,48 +78,8 @@ func (c Config) NewCode() (string, error) {
 	return string(out), nil
 }
 
-// Normalize folds a typed code into the form Keys hashes: upper case, without the dashes and spaces a caller puts
-// between groups. It never fails, so a caller can pass whatever the user entered.
+// Normalize folds a typed code into the form the handshake uses: upper case, without the dashes and spaces a caller
+// puts between groups. It never fails, so a caller can pass whatever the user entered.
 func Normalize(code string) string {
 	return strings.ToUpper(strings.NewReplacer("-", "", " ", "").Replace(code))
-}
-
-// Keys derives the two secrets of one pairing from the typed code and the X25519 shared secret. authKey is the key
-// Proof signs with, stretched from the low-entropy code so that one guess costs c.Iterations of PBKDF2; peerKey is
-// the long-term key HKDF derives from shared alone, so what a caller stores never depends on the code.
-func (c Config) Keys(code string, shared, transcript []byte) (authKey, peerKey []byte, err error) {
-	if err := c.Validate(); err != nil {
-		return nil, nil, err
-	}
-	authKey, err = pbkdf2.Key(sha256.New, Normalize(code), []byte(c.Protocol), c.Iterations, 32)
-	if err != nil {
-		return nil, nil, fmt.Errorf("codepair: stretch the code: %w", err)
-	}
-	digest := sha256.Sum256(transcript)
-	peerKey, err = hkdf.Key(sha256.New, shared, digest[:], c.PeerKeyInfo, 32)
-	if err != nil {
-		return nil, nil, fmt.Errorf("codepair: derive the peer key: %w", err)
-	}
-	return authKey, peerKey, nil
-}
-
-// Transcript builds the bytes both sides prove over: the protocol, both public keys, then both ids and display
-// names. Because the names are in it, a relay that swaps the name a device is stored under fails the proofs.
-func (c Config) Transcript(a, b []byte, joinerID, joinerName, hostID, hostName string) []byte {
-	return slices.Concat([]byte(c.Protocol), []byte{0}, a, b, []byte(joinerID), []byte{0}, []byte(joinerName), []byte{0}, []byte(hostID), []byte{0}, []byte(hostName))
-}
-
-// Proof signs the transcript and the shared secret under authKey with the role the signer plays, so each side sends a
-// different proof and a captured one cannot be replayed as the other.
-func Proof(authKey []byte, role string, transcript, shared []byte) []byte {
-	mac := hmac.New(sha256.New, authKey)
-	_, _ = mac.Write([]byte(role))
-	_, _ = mac.Write(transcript)
-	_, _ = mac.Write(shared)
-	return mac.Sum(nil)
-}
-
-// Verify reports whether two proofs match, in time that does not depend on where they first differ.
-func Verify(want, got []byte) bool {
-	return hmac.Equal(want, got)
 }
