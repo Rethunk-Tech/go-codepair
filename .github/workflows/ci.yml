@@ -8,6 +8,10 @@ on:
   workflow_dispatch:
   push:
     branches: [main]
+  # Off the hour so it is not in the same burst as every other weekly cron.
+  # Unchanged deps still get a govulncheck pass when a CVE is published later.
+  schedule:
+    - cron: "37 6 * * 1"
 
 permissions:
   contents: read
