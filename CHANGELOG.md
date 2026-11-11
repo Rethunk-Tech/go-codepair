@@ -14,14 +14,17 @@ Notable changes to `go-codepair`. The format follows
   (draft-irtf-cfrg-cpace-21, ristretto255 with SHA-512), bind the protocol label and both devices' ids and display
   names, confirm the key in both directions, and return a `Pairing` holding the peer key and the peer's identity only
   after both confirmations verify. An attacker who does not hold the code gets one guess per run.
-- `ErrMessage` and `ErrConfirmation` to tell a malformed message from a wrong code.
+- `ErrMessage` and `ErrConfirmation` to tell a malformed message from a wrong code, and `ErrCode` when the typed
+  code is not exactly `Config.CodeLength` characters from `Config.Alphabet`.
 - `MinCodeBits`: `Validate` now refuses codes under 32 bits, alphabets with repeated, non-ASCII or non-printable
   characters, and characters `Normalize` rewrites.
 
 ### Changed
 
 - `Limiter.Charge` returns `(locked, burned)` and counts only a guess it serves, so checking and charging are one
-  call. `Limiter.Locked` is gone. A caller charges once per run, before `Host.Accept`.
+  call. `Limiter.Locked` is gone. A caller charges once per run, before `Host.Accept`. `NewLimiter` returns
+  `(*Limiter, error)` and refuses a non-positive bound. `Refund` is a no-op unless that remote has an outstanding
+  charge.
 - `Config.Iterations` is gone; the code is no longer stretched, because CPace does not expose it to offline guessing.
 - `Config.Keys`, `Transcript`, `Proof` and `Verify` are replaced by the types above.
 

@@ -28,11 +28,13 @@ A worked example and the contracts: [HUMANS.md](HUMANS.md).
 
 - Codes: `NewCode` draws each character uniformly from a caller-chosen alphabet, and `Normalize` folds a typed code
   into the form both sides use, so case and separators never matter. `Validate` enforces a 32-bit entropy floor.
+  `NewJoiner` and `NewHost` refuse a code that is not exactly `CodeLength` characters from `Alphabet` (`ErrCode`).
 - Key exchange: `Joiner` and `Host` run CPace (draft-irtf-cfrg-cpace-21, ristretto255, SHA-512), bind the protocol
   label and both ids and display names, and confirm the key in both directions before they return a `Pairing`.
 - Peer key: the long-term key is HKDF-SHA-512 of the exchange's session key, so it never depends on a guessable value.
-- Rate limiting: `Limiter` is charged once per run, locks a remote out after a set number of failures, and reports
-  when failures in all have reached the point where the caller should drop the code.
+- Rate limiting: `NewLimiter` returns an error unless its bounds are positive. `Limiter` is charged once per run,
+  locks a remote out after a set number of failures, and reports when failures in all have reached the point where
+  the caller should drop the code.
 
 ## Documentation
 

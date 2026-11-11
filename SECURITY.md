@@ -12,10 +12,10 @@ exchange, so the code is never testable against recorded or computed data.
   joiner run, because the joiner answers only after the host's confirmation verifies. Pretending to be the joiner,
   it can test one code per run, because the host's reply is the only thing it receives. A wrong guess yields no
   data that rules out any other code, and no key.
-- Every guess therefore costs a run the host has seen. The caller must call `Limiter.Charge` before `Host.Accept`
-  and refuse when it reports locked or burned; `Limiter` then bounds all guessing. Guesses against the joiner cannot
-  be limited by the library, since the attacker is the host: the person typing sees a failed pairing and should
-  re-enter the code on a different run rather than keep it.
+- Guesses against the host are counted by `Limiter`, whose global burn count is the only hard cap (the per-remote
+  lock is a rate limit). The caller must call `Limiter.Charge` before `Host.Accept` and refuse when it reports
+  locked or burned. Guesses against the joiner by a rogue host are one per run the user starts and are not counted
+  by the library.
 - A relay between the devices cannot rename a device or swap a key: both ids and display names are in the
   transcript, so altering one makes the confirmations fail.
 - Anyone who learns the code before the run can pair. The code should live no longer than a person needs to type it.
@@ -38,14 +38,14 @@ Please do not open a public issue for a suspected vulnerability first.
 
 - The code a user types, through `Normalize`, `NewJoiner` and `NewHost`: any bytes, any length, any encoding.
   `Normalize` must not panic or allocate without bound, and the same code however separated or capitalised must
-  derive the same key.
+  derive the same key. A code shorter than the `Config`'s length or outside its alphabet is refused.
 - A peer's message, through `Host.Accept`, `Joiner.Finish` and `Host.Finish`: any bytes, empty included. Invalid
   encodings, the identity element and non-canonical identity encoding must be rejected without panicking, and no
   error path may return a key.
 - The remote identifier and clock a caller passes to `Limiter.Charge` and `Refund`: any string, and a clock that
   moves backwards. None may panic or leave the counts negative.
-- The `Config` a caller builds, through `Validate`: a zero or negative field, a weak or ambiguous alphabet, or a
-  code under 32 bits is refused rather than defaulted.
+- The `Config` a caller builds, through `Validate`: a zero or negative field, or a code under 32 bits, is refused
+  rather than defaulted. The alphabet must be distinct printable ASCII that `Normalize` leaves alone.
 
 ## What is out of scope
 
@@ -63,3 +63,8 @@ Please do not open a public issue for a suspected vulnerability first.
   stored key expires.
 - The code itself is meant to be visible: the user reads it off one screen and types it into another. Anyone who can
   see that screen already has it.
+- Ids and display names travel in clear in the pairing messages (draft-irtf-cfrg-cpace-21 section 10.1.1). The
+  confirmation authenticates them; it does not hide them from a network observer.
+- The session id is empty, so the draft's sid-uniqueness precondition and its quantum-annoying recommendation
+  (sections 10.9 and 10.12) are not met. Each run already uses a fresh code, so generators differ without a sid,
+  and the code is a short-lived, human-visible secret rather than a password reused across concurrent sessions.
