@@ -1,7 +1,7 @@
 #!/bin/bash -eu
 
-go install github.com/AdamKorcz/go-118-fuzz-build@latest
-go get github.com/AdamKorcz/go-118-fuzz-build/testing
+go install github.com/AdamKorcz/go-118-fuzz-build@a70c2aa677fa43583571959478decabe02a96cd6     # v0.0.0-20250520111509-a70c2aa677fa
+go get github.com/AdamKorcz/go-118-fuzz-build/testing@a70c2aa677fa43583571959478decabe02a96cd6 # v0.0.0-20250520111509-a70c2aa677fa
 
 # go-118-fuzz-build rewrites one *_test.go and omits sibling test files, so
 # unexported helpers (e.g. testConfig) disappear. Build internal test files
