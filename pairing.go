@@ -99,6 +99,12 @@ func (s *session) pairing(isk, peerAD []byte) (Pairing, error) {
 	return Pairing{PeerKey: key, PeerID: string(id), PeerName: string(name)}, nil
 }
 
+// bindMac folds PeerKeyInfo into the confirmation key so a mismatch fails the tag check
+// instead of returning two Pairings with different PeerKeys.
+func (s *session) bindMac(macKey []byte) ([]byte, error) {
+	return hkdf.Key(sha512.New, macKey, nil, s.cfg.PeerKeyInfo, sha512.Size)
+}
+
 // Joiner is the side that types the code. It speaks first. A Joiner is not safe for concurrent use and serves one
 // pairing attempt: a failed run needs a new one with a fresh secret.
 type Joiner struct{ s *session }
@@ -134,6 +140,10 @@ func (j *Joiner) Finish(hostMsg []byte) (confirm []byte, p Pairing, err error) {
 		return nil, Pairing{}, err
 	}
 	isk, macKey := keyConfirmation(k, nil, s.ya, s.ad, yb, adB)
+	macKey, err = s.bindMac(macKey)
+	if err != nil {
+		return nil, Pairing{}, fmt.Errorf("codepair: derive the confirmation key: %w", err)
+	}
 	if !hmac.Equal(tb, confirmationTag(macKey, yb, adB)) {
 		return nil, Pairing{}, ErrConfirmation
 	}
@@ -193,7 +203,12 @@ func (h *Host) Accept(joinerMsg []byte) ([]byte, error) {
 	if err := checkPeerAD(id, name); err != nil {
 		return nil, err
 	}
-	h.isk, h.macKey = keyConfirmation(k, nil, ya, adA, s.ya, s.ad)
+	isk, macKey := keyConfirmation(k, nil, ya, adA, s.ya, s.ad)
+	macKey, err = s.bindMac(macKey)
+	if err != nil {
+		return nil, fmt.Errorf("codepair: derive the confirmation key: %w", err)
+	}
+	h.isk, h.macKey = isk, macKey
 	h.peerY, h.peerAD = ya, adA
 	return slices.Concat(s.ya, confirmationTag(h.macKey, s.ya, s.ad), s.ad), nil
 }

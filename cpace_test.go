@@ -195,6 +195,31 @@ func TestFullRun(t *testing.T) {
 	}
 }
 
+func TestPeerKeyInfoMismatchFailsConfirmation(t *testing.T) {
+	t.Parallel()
+	joinCfg := testConfig
+	joinCfg.PeerKeyInfo = "other-peer-key"
+	joiner, msgA, err := joinCfg.NewJoiner("ABCD2345", "joiner-id", "Laptop")
+	if err != nil {
+		t.Fatal(err)
+	}
+	host, err := testConfig.NewHost("ABCD2345", "host-id", "Desktop")
+	if err != nil {
+		t.Fatal(err)
+	}
+	msgB, err := host.Accept(msgA)
+	if err != nil {
+		t.Fatal(err)
+	}
+	confirm, jp, err := joiner.Finish(msgB)
+	if !errors.Is(err, ErrConfirmation) {
+		t.Fatalf("Finish err=%v pairing=%+v confirm=%d bytes, want ErrConfirmation", err, jp, len(confirm))
+	}
+	if jp.PeerKey != nil || jp.PeerID != "" || jp.PeerName != "" {
+		t.Fatalf("Finish pairing %+v, want zero", jp)
+	}
+}
+
 func TestWrongCodeFailsOnBothSides(t *testing.T) {
 	t.Parallel()
 	// The joiner rejects the host's confirmation first, so the host never receives one to verify.
