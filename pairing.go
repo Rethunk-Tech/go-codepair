@@ -120,14 +120,13 @@ func (c Config) NewJoiner(code, id, name string) (*Joiner, []byte, error) {
 }
 
 // Finish takes the host's message. It succeeds only when the host's confirmation verifies, which a host that does
-// not know the code cannot produce, and then returns the confirmation to send back and the pairing. On any error
-// the Joiner is spent and nothing else is returned.
+// not know the code cannot produce, and then returns the confirmation to send back and the pairing. A malformed
+// message is rejected without spending the Joiner; a failed confirmation spends it.
 func (j *Joiner) Finish(hostMsg []byte) (confirm []byte, p Pairing, err error) {
 	s := j.s
 	if s == nil {
 		return nil, Pairing{}, errUsed
 	}
-	j.s = nil
 	if len(hostMsg) > maxPairingMessage || len(hostMsg) < elemSize+tagSize {
 		return nil, Pairing{}, ErrMessage
 	}
@@ -139,6 +138,7 @@ func (j *Joiner) Finish(hostMsg []byte) (confirm []byte, p Pairing, err error) {
 	if err != nil {
 		return nil, Pairing{}, err
 	}
+	j.s = nil
 	isk, macKey := keyConfirmation(k, nil, s.ya, s.ad, yb, adB)
 	macKey, err = s.bindMac(macKey)
 	if err != nil {
@@ -182,7 +182,6 @@ func (h *Host) Accept(joinerMsg []byte) ([]byte, error) {
 	if h.s == nil || h.accepted {
 		return nil, errUsed
 	}
-	h.accepted = true
 	if len(joinerMsg) > maxPairingMessage || len(joinerMsg) < elemSize {
 		return nil, ErrMessage
 	}
@@ -203,6 +202,7 @@ func (h *Host) Accept(joinerMsg []byte) ([]byte, error) {
 	if err := checkPeerAD(id, name); err != nil {
 		return nil, err
 	}
+	h.accepted = true
 	isk, macKey := keyConfirmation(k, nil, ya, adA, s.ya, s.ad)
 	macKey, err = s.bindMac(macKey)
 	if err != nil {

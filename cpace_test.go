@@ -220,6 +220,63 @@ func TestPeerKeyInfoMismatchFailsConfirmation(t *testing.T) {
 	}
 }
 
+func TestTruncatedMessageDoesNotSpend(t *testing.T) {
+	t.Parallel()
+	joiner, msgA, err := testConfig.NewJoiner("ABCD2345", "joiner-id", "Laptop")
+	if err != nil {
+		t.Fatal(err)
+	}
+	host, err := testConfig.NewHost("ABCD2345", "host-id", "Desktop")
+	if err != nil {
+		t.Fatal(err)
+	}
+	msgB, err := host.Accept(msgA)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := joiner.Finish(msgB[:10]); !errors.Is(err, ErrMessage) {
+		t.Fatalf("short Finish err=%v, want ErrMessage", err)
+	}
+	confirm, jp, err := joiner.Finish(msgB)
+	if err != nil {
+		t.Fatalf("Finish after short message: %v", err)
+	}
+	hp, err := host.Finish(confirm)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(jp.PeerKey, hp.PeerKey) {
+		t.Fatalf("peer keys differ: %x, %x", jp.PeerKey, hp.PeerKey)
+	}
+
+	joiner2, msgA2, err := testConfig.NewJoiner("ABCD2345", "joiner-id", "Laptop")
+	if err != nil {
+		t.Fatal(err)
+	}
+	host2, err := testConfig.NewHost("ABCD2345", "host-id", "Desktop")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := host2.Accept(make([]byte, 5)); !errors.Is(err, ErrMessage) {
+		t.Fatalf("short Accept err=%v, want ErrMessage", err)
+	}
+	msgB2, err := host2.Accept(msgA2)
+	if err != nil {
+		t.Fatalf("Accept after short message: %v", err)
+	}
+	confirm2, jp2, err := joiner2.Finish(msgB2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	hp2, err := host2.Finish(confirm2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(jp2.PeerKey, hp2.PeerKey) {
+		t.Fatalf("peer keys differ after short Accept: %x, %x", jp2.PeerKey, hp2.PeerKey)
+	}
+}
+
 func TestWrongCodeFailsOnBothSides(t *testing.T) {
 	t.Parallel()
 	// The joiner rejects the host's confirmation first, so the host never receives one to verify.
