@@ -32,9 +32,10 @@ A worked example and the contracts: [HUMANS.md](HUMANS.md).
 - Key exchange: `Joiner` and `Host` run CPace (draft-irtf-cfrg-cpace-21, ristretto255, SHA-512), bind the protocol
   label and both ids and display names, and confirm the key in both directions before they return a `Pairing`.
 - Peer key: the long-term key is HKDF-SHA-512 of the exchange's session key, so it never depends on a guessable value.
-- Rate limiting: `NewLimiter` returns an error unless its bounds are positive. `Limiter` is charged once per run,
-  locks a remote out after a set number of failures, and reports when failures in all have reached the point where
-  the caller should drop the code.
+- Rate limiting: `NewLimiter` returns an error unless its bounds are positive. `Host.Accept` charges a `Limiter`
+  once per run, locks a remote out after a set number of failures, and reports when failures in all have reached
+  the point where the caller should drop the code. Remotes are identified by IP only, IPv6 by /64, so users who
+  share a NAT share that limit.
 
 ## Documentation
 
