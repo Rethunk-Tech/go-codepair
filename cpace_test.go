@@ -162,7 +162,7 @@ func run(t *testing.T, hostCode, joinCode string) (jp Pairing, jerr error, hp Pa
 	if err != nil {
 		t.Fatal(err)
 	}
-	msgB, err := host.Accept(msgA)
+	msgB, err := hostAccept(host, msgA)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -207,7 +207,7 @@ func TestPeerKeyInfoMismatchFailsConfirmation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	msgB, err := host.Accept(msgA)
+	msgB, err := hostAccept(host, msgA)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -230,7 +230,7 @@ func TestTruncatedMessageDoesNotSpend(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	msgB, err := host.Accept(msgA)
+	msgB, err := hostAccept(host, msgA)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -257,10 +257,10 @@ func TestTruncatedMessageDoesNotSpend(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := host2.Accept(make([]byte, 5)); !errors.Is(err, ErrMessage) {
+	if _, err := hostAccept(host2, make([]byte, 5)); !errors.Is(err, ErrMessage) {
 		t.Fatalf("short Accept err=%v, want ErrMessage", err)
 	}
-	msgB2, err := host2.Accept(msgA2)
+	msgB2, err := hostAccept(host2, msgA2)
 	if err != nil {
 		t.Fatalf("Accept after short message: %v", err)
 	}
@@ -288,7 +288,7 @@ func TestWrongCodeFailsOnBothSides(t *testing.T) {
 	// A joiner that skips its own check and answers anyway is still rejected by the host.
 	joiner, msgA, _ := testConfig.NewJoiner("ABCD2346", "j", "J")
 	host, _ := testConfig.NewHost("ABCD2345", "h", "H")
-	msgB, err := host.Accept(msgA)
+	msgB, err := hostAccept(host, msgA)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -344,7 +344,7 @@ func TestRogueHostGetsOneGuessPerRun(t *testing.T) {
 	for guess, wantOK := range map[string]bool{"AAAAAAAA": false, trueCode: true} {
 		joiner, msgA, _ := testConfig.NewJoiner(trueCode, "joiner-id", "Laptop")
 		rogue, _ := testConfig.NewHost(guess, "rogue", "Rogue")
-		msgB, err := rogue.Accept(msgA)
+		msgB, err := hostAccept(rogue, msgA)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -369,7 +369,7 @@ func TestInvalidMessagesAreRejected(t *testing.T) {
 		"trailing bytes": append(append([]byte(nil), notPoint...), append(ad, 1)...),
 	} {
 		host, _ := testConfig.NewHost("ABCD2345", "h", "H")
-		if _, err := host.Accept(msg); !errors.Is(err, ErrMessage) {
+		if _, err := hostAccept(host, msg); !errors.Is(err, ErrMessage) {
 			t.Errorf("host %s: err = %v", name, err)
 		}
 	}
@@ -389,7 +389,7 @@ func TestTamperedIdentityFailsConfirmation(t *testing.T) {
 	t.Parallel()
 	joiner, msgA, _ := testConfig.NewJoiner("ABCD2345", "joiner-id", "Laptop")
 	host, _ := testConfig.NewHost("ABCD2345", "host-id", "Desktop")
-	msgB, err := host.Accept(msgA)
+	msgB, err := hostAccept(host, msgA)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -403,8 +403,8 @@ func TestHandshakesAreSingleUse(t *testing.T) {
 	t.Parallel()
 	joiner, msgA, _ := testConfig.NewJoiner("ABCD2345", "j", "J")
 	host, _ := testConfig.NewHost("ABCD2345", "h", "H")
-	msgB, _ := host.Accept(msgA)
-	if _, err := host.Accept(msgA); err == nil {
+	msgB, _ := hostAccept(host, msgA)
+	if _, err := hostAccept(host, msgA); err == nil {
 		t.Error("a host replied twice")
 	}
 	if _, err := host.Finish(nil); err == nil {
@@ -427,7 +427,7 @@ func FuzzMessages(f *testing.F) {
 	f.Add([]byte{})
 	f.Fuzz(func(t *testing.T, msg []byte) {
 		host, _ := testConfig.NewHost("ABCD2345", "h", "H")
-		if reply, err := host.Accept(msg); err == nil && len(reply) < elemSize+tagSize {
+		if reply, err := hostAccept(host, msg); err == nil && len(reply) < elemSize+tagSize {
 			t.Fatalf("short reply %x", reply)
 		}
 		joiner, _, _ := testConfig.NewJoiner("ABCD2345", "j", "J")

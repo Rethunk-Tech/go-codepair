@@ -26,13 +26,13 @@ cannot resolve that check from PATH.
 - K is never exposed. The stored key is HKDF over ISK, and a `Pairing` is returned only after the peer's
   confirmation tag verified: no error path returns a key.
 - The joiner answers only after verifying the host's tag, so a host without the code obtains nothing to test other
-  guesses against. The host's reply is the one guess an impostor joiner gets, which is why a caller charges the
-  `Limiter` before `Host.Accept`.
+  guesses against. The host's reply is the one guess an impostor joiner gets, which is why `Host.Accept` charges the
+  `Limiter` for the remote before it replies.
 - `CodeLength`, `Alphabet` are caller policy, bounded below only by `MinCodeBits` and the alphabet rules in
   `Validate`; the package does not decide how long a code lives.
 - `Limiter` holds its own mutex and knows nothing about codes, sessions or clocks it does not receive. `now` is a
   parameter so a test can move time without sleeping, and `Charge` checks and counts under one lock so runs racing
-  each other cannot jointly pass the limit.
+  each other cannot jointly pass the limit. Remotes are keyed by IP, with IPv6 grouped by /64.
 - `Limiter.Refund` never shortens a lockout and never drives a count below zero. A refund belongs to a success; it
   cannot undo a lockout another guess earned.
 - Nothing here touches a socket, a file, or a global. The package has no `init`, no package-level mutable state, and

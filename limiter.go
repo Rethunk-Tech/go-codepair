@@ -2,6 +2,7 @@ package codepair
 
 import (
 	"errors"
+	"net"
 	"sync"
 	"time"
 )
@@ -44,9 +45,11 @@ func NewLimiter(maxFailures, burnFailures int, lockout time.Duration) (*Limiter,
 // Charge records one guess from remote and reports whether the guess may be served. locked means remote is inside a
 // lockout; burned means the guesses failed in all have spent burnFailures, and the caller should drop the code.
 // Either way nothing is counted and the guess must be refused. Checking and counting happen under one lock, so
-// concurrent runs cannot jointly pass the limit; the remote is whatever the caller keys on, so a limit per remote
-// holds only as far as an attacker cannot choose it, and the global count is the bound that does not depend on that.
+// concurrent runs cannot jointly pass the limit. Remotes are keyed by IP, with IPv6 grouped by /64, so a limit per
+// remote holds only as far as an attacker cannot choose an address, and the global count is the bound that does not
+// depend on that.
 func (l *Limiter) Charge(remote string, now time.Time) (locked, burned bool) {
+	remote = remoteKey(remote)
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	// A lock that has been quiet for a whole lockout says nothing about a computer that comes back tomorrow.
@@ -78,6 +81,7 @@ func (l *Limiter) Charge(remote string, now time.Time) (locked, burned bool) {
 // back. A remote with no outstanding charge is left unchanged, so a refund cannot un-burn a budget another guess
 // spent.
 func (l *Limiter) Refund(remote string, now time.Time) {
+	remote = remoteKey(remote)
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	lock, ok := l.locks[remote]
@@ -90,4 +94,21 @@ func (l *Limiter) Refund(remote string, now time.Time) {
 	}
 	l.locks[remote] = lock
 	l.failures = max(0, l.failures-1)
+}
+
+// remoteKey is the limiter's identity for a peer: the IP, IPv6 masked to /64. A host:port is reduced to the IP so
+// two ports on one computer share the budget. A string that is not an address is kept as given.
+func remoteKey(remote string) string {
+	host := remote
+	if h, _, err := net.SplitHostPort(remote); err == nil {
+		host = h
+	}
+	ip := net.ParseIP(host)
+	if ip == nil {
+		return remote
+	}
+	if v4 := ip.To4(); v4 != nil {
+		return v4.String()
+	}
+	return ip.Mask(net.CIDRMask(64, 128)).String()
 }

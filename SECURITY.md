@@ -13,9 +13,8 @@ exchange, so the code is never testable against recorded or computed data.
   it can test one code per run, because the host's reply is the only thing it receives. A wrong guess yields no
   data that rules out any other code, and no key.
 - Guesses against the host are counted by `Limiter`, whose global burn count is the only hard cap (the per-remote
-  lock is a rate limit). The caller must call `Limiter.Charge` before `Host.Accept` and refuse when it reports
-  locked or burned. Guesses against the joiner by a rogue host are one per run the user starts and are not counted
-  by the library.
+  lock is a rate limit). `Host.Accept` charges the limiter for the remote and refuses with `ErrLocked` or `ErrBurned`.
+  Guesses against the joiner by a rogue host are one per run the user starts and are not counted by the library.
 - A relay between the devices cannot rename a device or swap a key: both ids and display names are in the
   transcript, so altering one makes the confirmations fail.
 - Anyone who learns the code before the run can pair. The code should live no longer than a person needs to type it.
@@ -49,9 +48,8 @@ Please do not open a public issue for a suspected vulnerability first.
 
 ## What is out of scope
 
-- The transport and the lifetime of an open code are the caller's. This package never sees a wire, a clock, or a
-  session, so a caller that does not charge the `Limiter` before each run, or honours a code forever, has weakened
-  its own pairing.
+- The transport and the lifetime of an open code are the caller's. This package never sees a wire or a session, so a
+  caller that honours a code forever has weakened its own pairing.
 - A caller must check `Pairing.PeerID` and `PeerName` against the device it meant to pair with before storing the
   key. The confirmation proves the peer sent those values, not that they are the right ones.
 - The cipher suite is ristretto255 with SHA-512 in the initiator-responder setting, per draft-irtf-cfrg-cpace-21,
