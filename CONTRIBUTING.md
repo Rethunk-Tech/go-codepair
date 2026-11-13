@@ -21,7 +21,11 @@ The module has one consumer. A new export needs a call site there, not a use for
 Tests are in the same package and exercise unexported code directly, so they are not a reason to
 export anything.
 
-New behaviour lands with a test that fails without it.
+## Tests
+
+Add a `Test*` function in a `*_test.go` file beside the code it covers, in package `codepair`
+(runnable examples use `codepair_test`). `go test` in this directory runs that package; `gate` is
+the full check. New behaviour lands with a test that fails without it.
 
 ## Dependencies
 
