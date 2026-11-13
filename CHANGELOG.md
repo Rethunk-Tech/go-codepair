@@ -6,6 +6,12 @@ Notable changes to `go-codepair`. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- A truncated pairing message is rejected without spending `Joiner` or `Host`, so the real datagram can still complete the run.
+- Confirmation binds `PeerKeyInfo`, so a mismatch fails the tag check instead of completing with two different keys.
+- `filippo.io/edwards25519` 1.2.0, via ristretto255, closes GO-2026-4503.
+
 ## [0.3.0] - 2026-11-11
 
 ### Added
