@@ -14,6 +14,18 @@ var testConfig = Config{
 	Alphabet:    "ABCDEFGHJKMNPQRSTUVWXYZ23456789",
 }
 
+func unlimitedLimiter() *Limiter {
+	l, err := NewLimiter(1<<20, 1<<20, time.Hour)
+	if err != nil {
+		panic(err)
+	}
+	return l
+}
+
+func hostAccept(h *Host, msg []byte) ([]byte, error) {
+	return h.Accept(msg, unlimitedLimiter(), "192.0.2.1", time.Now())
+}
+
 func TestNewCodeIsUniformOverTheAlphabet(t *testing.T) {
 	t.Parallel()
 	seen := map[rune]int{}
@@ -107,6 +119,44 @@ func FuzzNormalizeIsIdempotent(f *testing.F) {
 			t.Fatalf("Normalize(%q) = %q, then %q", code, once, twice)
 		}
 	})
+}
+
+func TestLimiterKeysRemotesByIP(t *testing.T) {
+	t.Parallel()
+	now := time.Now()
+	limiter, err := NewLimiter(1, 10, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if locked, burned := limiter.Charge("192.0.2.9:443", now); locked || burned {
+		t.Fatal("first charge was refused")
+	}
+	if locked, _ := limiter.Charge("192.0.2.9", now); !locked {
+		t.Fatal("the same IPv4 on another port was a new remote")
+	}
+	limiter, err = NewLimiter(1, 10, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if locked, burned := limiter.Charge("2001:db8:0:1::1", now); locked || burned {
+		t.Fatal("first IPv6 charge was refused")
+	}
+	if locked, _ := limiter.Charge("[2001:db8:0:1::2]:9", now); !locked {
+		t.Fatal("another address in the /64 was a new remote")
+	}
+	if locked, _ := limiter.Charge("2001:db8:0:2::1", now); locked {
+		t.Fatal("a different /64 shared the lock")
+	}
+	limiter, err = NewLimiter(2, 10, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	limiter.Charge("2001:db8:0:3::1", now)
+	limiter.Refund("[2001:db8:0:3::2]:80", now)
+	limiter.Charge("2001:db8:0:3::3", now)
+	if locked, _ := limiter.Charge("2001:db8:0:3::4", now); locked {
+		t.Fatal("a refund under another address in the /64 did not return the guess")
+	}
 }
 
 func TestLimiterLocksOutOneRemote(t *testing.T) {

@@ -6,6 +6,15 @@ Notable changes to `go-codepair`. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- `ErrLocked` and `ErrBurned`: `Host.Accept` returns them when the limiter refuses the remote.
+
+### Changed
+
+- `Host.Accept` takes a `Limiter`, the remote address, and the time, and charges before it replies. Remotes are
+  keyed by IP, with IPv6 grouped by /64.
+
 ### Fixed
 
 - A truncated pairing message is rejected without spending `Joiner` or `Host`, so the real datagram can still complete the run.

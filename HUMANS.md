@@ -16,6 +16,7 @@ package main
 
 import (
  "fmt"
+ "time"
 
  "github.com/Totative/go-codepair"
 )
@@ -43,8 +44,12 @@ func main() {
   panic(err)
  }
 
- // The host charges its Limiter here, then replies.
- toJoiner, err := host.Accept(toHost)
+ limiter, err := codepair.NewLimiter(3, 100, time.Minute)
+ if err != nil {
+  panic(err)
+ }
+ now := time.Date(2026, 1, 2, 15, 4, 5, 0, time.UTC)
+ toJoiner, err := host.Accept(toHost, limiter, "192.0.2.1", now)
  if err != nil {
   panic(err)
  }
@@ -61,8 +66,8 @@ func main() {
 }
 ```
 
-A host must charge a `Limiter` once per run, before `Host.Accept`, and refund it when `Host.Finish` succeeds: that
-is what keeps a short code from being guessed online.
+`Host.Accept` charges a `Limiter` once per run, keyed by the remote's IP (IPv6 by /64), and the caller refunds it
+when `Host.Finish` succeeds: that is what keeps a short code from being guessed online.
 
 ## Contracts
 
@@ -74,7 +79,7 @@ is what keeps a short code from being guessed online.
 | `Config.NewJoiner` | Refuses an invalid `Config`, a code that is not exactly `CodeLength` characters from `Alphabet` (`ErrCode`), an empty id, and an id or name longer than 256 bytes. Returns the joiner and the one message for the host. A `Joiner` is not safe for concurrent use and serves one pairing attempt. |
 | `Joiner.Finish` | Takes the host's message. Returns the confirmation to send and the `Pairing`, or `ErrMessage` / `ErrConfirmation` with nothing else. Rejects a reflected share, a message over 1 KiB, an empty peer id, and an id or name longer than 256 bytes. |
 | `Config.NewHost` | Refuses an invalid `Config`, a code that is not exactly `CodeLength` characters from `Alphabet` (`ErrCode`), an empty id, and an id or name longer than 256 bytes. A `Host` is not safe for concurrent use and serves one pairing attempt. |
-| `Host.Accept` | Takes the joiner's message and returns the reply. Rejects malformed, invalid-point, identity and reflected-share messages with `ErrMessage`, and a message over 1 KiB or with an empty or oversized id or name. The caller must charge the `Limiter` for the remote before calling it. |
+| `Host.Accept` | Takes the joiner's message, a `Limiter`, the remote, and the time, charges the limiter, and returns the reply. Rejects a remote over the limit with `ErrLocked` or `ErrBurned`, malformed, invalid-point, identity and reflected-share messages with `ErrMessage`, and a message over 1 KiB or with an empty or oversized id or name. |
 | `Host.Finish` | Takes the joiner's confirmation. Returns the `Pairing` only if it verifies in constant time; otherwise `ErrConfirmation` and nothing else. |
 | `Pairing` | `PeerKey` is 32 bytes, identical on both sides. `PeerID` and `PeerName` come from the peer's message; the caller checks them before storing the key. |
 | `NewLimiter` | Returns an error unless `maxFailures`, `burnFailures` and `lockout` are all positive. |

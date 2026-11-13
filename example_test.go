@@ -29,8 +29,13 @@ func Example() {
 	if err != nil {
 		panic(err)
 	}
+	limiter, err := codepair.NewLimiter(3, 100, time.Minute)
+	if err != nil {
+		panic(err)
+	}
+	now := time.Date(2026, 1, 2, 15, 4, 5, 0, time.UTC)
 
-	toJoiner, err := host.Accept(toHost)
+	toJoiner, err := host.Accept(toHost, limiter, "192.0.2.1", now)
 	if err != nil {
 		panic(err)
 	}
@@ -104,7 +109,12 @@ func ExampleJoiner_Finish() {
 	if err != nil {
 		panic(err)
 	}
-	toJoiner, err := host.Accept(toHost)
+	limiter, err := codepair.NewLimiter(3, 100, time.Minute)
+	if err != nil {
+		panic(err)
+	}
+	now := time.Date(2026, 1, 2, 15, 4, 5, 0, time.UTC)
+	toJoiner, err := host.Accept(toHost, limiter, "192.0.2.1", now)
 	if err != nil {
 		panic(err)
 	}
@@ -127,7 +137,12 @@ func ExampleHost_Accept() {
 	if err != nil {
 		panic(err)
 	}
-	toJoiner, err := host.Accept(toHost)
+	limiter, err := codepair.NewLimiter(3, 100, time.Minute)
+	if err != nil {
+		panic(err)
+	}
+	now := time.Date(2026, 1, 2, 15, 4, 5, 0, time.UTC)
+	toJoiner, err := host.Accept(toHost, limiter, "192.0.2.1", now)
 	fmt.Println(err == nil, len(toJoiner) > 0)
 	// Output:
 	// true true
@@ -146,7 +161,12 @@ func ExampleHost_Finish() {
 	if err != nil {
 		panic(err)
 	}
-	toJoiner, err := host.Accept(toHost)
+	limiter, err := codepair.NewLimiter(3, 100, time.Minute)
+	if err != nil {
+		panic(err)
+	}
+	now := time.Date(2026, 1, 2, 15, 4, 5, 0, time.UTC)
+	toJoiner, err := host.Accept(toHost, limiter, "192.0.2.1", now)
 	if err != nil {
 		panic(err)
 	}

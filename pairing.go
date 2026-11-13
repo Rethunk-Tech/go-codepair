@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/gtank/ristretto255"
 )
@@ -22,6 +23,12 @@ type Pairing struct {
 }
 
 var errUsed = errors.New("codepair: this handshake has already been used")
+
+// ErrLocked reports that Accept refused a remote that is inside a lockout.
+var ErrLocked = errors.New("codepair: remote is locked out")
+
+// ErrBurned reports that Accept refused because the global guess budget is spent.
+var ErrBurned = errors.New("codepair: guess budget is spent")
 
 const (
 	maxADField        = 256
@@ -154,9 +161,9 @@ func (j *Joiner) Finish(hostMsg []byte) (confirm []byte, p Pairing, err error) {
 	return confirmationTag(macKey, s.ya, s.ad), p, nil
 }
 
-// Host is the side that shows the code. A Host is not safe for concurrent use and serves one pairing attempt. A
-// caller charges its Limiter for the remote before Accept, because the reply lets whoever sent the joiner message
-// test one guess.
+// Host is the side that shows the code. A Host is not safe for concurrent use and serves one pairing attempt.
+// Accept charges the Limiter for the remote before it replies, because the reply lets whoever sent the joiner
+// message test one guess.
 type Host struct {
 	s        *session
 	macKey   []byte
@@ -175,12 +182,22 @@ func (c Config) NewHost(code, id, name string) (*Host, error) {
 	return &Host{s: s}, nil
 }
 
-// Accept takes the joiner's message and returns the reply, which carries the host's confirmation. The caller must
-// charge the Limiter for the remote before calling Accept, because the reply is one guess at the code. The run is
-// unconfirmed until Finish verifies the joiner's answer.
-func (h *Host) Accept(joinerMsg []byte) ([]byte, error) {
+// Accept takes the joiner's message and returns the reply, which carries the host's confirmation. It charges
+// limiter for remote first, because the reply is one guess at the code, and refuses with ErrLocked or ErrBurned
+// when that remote may not be served. IPv6 remotes share a limit on their /64; the key is the IP, not the port.
+// The run is unconfirmed until Finish verifies the joiner's answer.
+func (h *Host) Accept(joinerMsg []byte, limiter *Limiter, remote string, now time.Time) ([]byte, error) {
 	if h.s == nil || h.accepted {
 		return nil, errUsed
+	}
+	if limiter == nil {
+		return nil, errors.New("codepair: limiter is nil")
+	}
+	if locked, burned := limiter.Charge(remote, now); locked || burned {
+		if burned {
+			return nil, ErrBurned
+		}
+		return nil, ErrLocked
 	}
 	if len(joinerMsg) > maxPairingMessage || len(joinerMsg) < elemSize {
 		return nil, ErrMessage
